@@ -1,0 +1,394 @@
+
+#----
+#Clustering for JJ dataset   
+#PAM is used.
+#Clustering is done for the full dataset and an undersampled data set.
+#The features used for clustering are :
+#Numerical   = levelN,priorityN,impactN, ndays
+#Categorical = app_category,res_category,region,prod_line
+
+#Question is : How can Johnson and Johnson push the L2 and L3 tickets to L1, so that cost is saved.
+
+#----
+
+```{r}
+library(lattice)
+library(ggplot2)
+library(caret)
+library(dplyr)
+library(stats)
+library(factoextra)
+library(cluster)
+library(fpc)
+library(NbClust)
+install.packages("stringi")
+library(stringi)
+install.packages("corrplot")
+library("RColorBrewer")
+library(scales)
+```
+
+#---Majority undersampling in performed in levelN feature. L1 and L2 are undersampled so as to increase share of L3.
+#---Choose 20% points from L2 and 80% points from L1.
+
+```{r}
+#data
+source("C:\\Users\\khade\\MachineLearning\\JJproject\\Jairo\\Jairo_cleaning.R")
+
+#17423
+nrow(sdata)
+
+#Majority undersampling
+#670 (L3 is underrepresented)
+sum(sdata$levelN == 3)
+#13398
+sum(sdata$levelN == 2)
+#3355
+sum(sdata$levelN == 1)
+
+#----Do undersampling 
+set.seed(123)
+indx2 <- sample(which(sdata$levelN == 2), round(0.2*sum(sdata$levelN == 2)),replace=FALSE)
+set.seed(123)
+indx1 <- sample(which(sdata$levelN == 1), round(0.8*sum(sdata$levelN == 1)),replace=FALSE)
+underDF <- rbind(sdata[indx1,], sdata[indx2,])
+underDF <- rbind(underDF,sdata[which(sdata$levelN == 3),])
+
+#Undersample dataset has fewer rows (6034)
+nr <- nrow(underDF)
+```
+
+
+#--------------Before doing clustering look at the distribution of each feature between full and under sample.
+#--As is seen from the bar charts the distribution of features is similar (in terms of shape) between undersample and full sample.
+```{r}
+
+#plot barchart of 2 variables
+var2_bar <- function(dummyDF){
+   mypp <- ggplot(dummyDF, aes(x=lvl, y=value, fill=variable)) + geom_bar(stat='identity', position='dodge') 
+   mypp <- mypp + labs(x="",y="") + scale_fill_manual("dataset", values = c("fullsamp" = "lightslateblue", "undersamp" = "palevioletred"))
+   mypp <- mypp + theme(legend.position = c(0.8,0.8), legend.text = element_text(size=15)) 
+   mypp <- mypp + theme(axis.text.y = element_text(size=18, face="bold"), axis.text.x = element_text(size=18, face="bold") )
+   return (mypp)
+  }
+
+lvl       <- c('L1','L2','L3')
+fullsamp  <- as.numeric(table(sdata$levelN))/nrs
+undersamp <- as.numeric(table(underDF$levelN))/nru
+rm(tempDF)
+tempDF <- data.frame(lvl,fullsamp,undersamp)
+df2 <- melt(tempDF, id.vars='lvl')
+var2_bar(df2)
+
+
+lvl       <- c('P1','P2','P3')
+fullsamp  <- as.numeric(table(sdata$priorityN))/nrs
+undersamp <- as.numeric(table(underDF$priorityN))/nru
+rm(tempDF)
+tempDF <- data.frame(lvl,fullsamp,undersamp)
+df2 <- melt(tempDF, id.vars='lvl')
+var2_bar(df2)
+
+lvl       <- c('I1','I2','I3')
+fullsamp  <- as.numeric(table(sdata$impactN))/nrs
+undersamp <- as.numeric(table(underDF$impactN))/nru
+rm(tempDF)
+tempDF <- data.frame(lvl,fullsamp,undersamp)
+df2 <- melt(tempDF, id.vars='lvl')
+var2_bar(df2)
+
+lvl       <- levels(sdata$app_category)
+fullsamp  <- as.numeric(table(sdata$app_category))/nrs
+undersamp <- as.numeric(table(underDF$app_category))/nru
+rm(tempDF)
+tempDF <- data.frame(lvl,fullsamp,undersamp)
+df2 <- melt(tempDF, id.vars='lvl')
+var2_bar(df2) + coord_flip()
+
+
+lvl       <- levels(sdata$res_category)
+fullsamp  <- as.numeric(table(sdata$res_category))/nrs
+undersamp <- as.numeric(table(underDF$res_category))/nru
+rm(tempDF)
+tempDF <- data.frame(lvl,fullsamp,undersamp)
+df2 <- melt(tempDF, id.vars='lvl')
+var2_bar(df2) + coord_flip()
+
+lvl       <- levels(sdata$region)
+fullsamp  <- as.numeric(table(sdata$region))/nrs
+undersamp <- as.numeric(table(underDF$region))/nru
+rm(tempDF)
+tempDF <- data.frame(lvl,fullsamp,undersamp)
+df2 <- melt(tempDF, id.vars='lvl')
+var2_bar(df2) + coord_flip()
+
+lvl       <- levels(sdata$prod_line)
+fullsamp  <- as.numeric(table(sdata$prod_line))/nrs
+undersamp <- as.numeric(table(underDF$prod_line))/nru
+rm(tempDF)
+tempDF <- data.frame(lvl,fullsamp,undersamp)
+df2 <- melt(tempDF, id.vars='lvl')
+var2_bar(df2) + coord_flip()
+
+ndaysarr <- c(0,1,3,5,10,1000)
+nd = length(ndaysarr)-1
+rm(ndy)
+ndy <-  as.factor(ndaysarr[1:nd]) 
+fullsamp  <- pct_share_num2(sdata,sdata$ndays,ndaysarr)/100
+undersamp <- pct_share_num2(underDF,underDF$ndays,ndaysarr)/100
+rm(tempDF)
+tempDF <- data.frame(ndy,fullsamp,undersamp)
+df2 <- melt(tempDF, id.vars='ndy')
+
+pp2 <- ggplot(df2, aes(x=ndy, y=value, fill=variable)) + geom_bar(stat='identity', position='dodge') 
+pp2 <- pp2 + labs(x="",y="") + scale_fill_manual("dataset", values = c("fullsamp" = "lightslateblue", "undersamp" = "palevioletred"))
+pp2 <- pp2 + theme(legend.position = c(0.8,0.8), legend.text = element_text(size=15)) 
+pp2 <- pp2 + theme(axis.text.y = element_text(size=18, face="bold"), axis.text.x = element_text(size=18, face="bold") )
+pp2
+
+
+```
+
+
+#PAM clustering. Choose either sdata or underDF.
+#sdata is the full dataset. Use kmax=10. Neither of these clusters have more than 10% membership of L3.
+#underDF is the undersampled dataset. Use kmax=20.
+
+```{r}
+#-----Define a new DF for convenience (with only features used for clustering.)
+
+#Use this one to do clustering for the full dataset (17K rows)
+#newDF <- sdata[,c('levelN','priorityN','impactN','app_category','res_category','region','ndays','prod_line')]
+
+#Use this one to do clustering with majority undersampling.
+newDF <- underDF[,c('levelN','priorityN','impactN','app_category','res_category','region','ndays','prod_line')]
+nrs <- nrow(newDF)
+
+#Calculate the dissmilarity matrix
+DM = daisy(newDF, metric = "gower",stand = TRUE)
+gower_mat <- as.matrix(DM)
+dim(gower_mat)
+#--print out a few values to make sure that it lies between 0 and 1.
+gower_mat[seq(1,nrs,600),100]
+
+ptm <- proc.time()
+#Use kmax = 10 for the full dataset and kmax = 20 for the undersample dataset.
+kmax <- 20
+
+#-----Carry out PAM clustering
+rm(pamobj)
+pamobj <- vector(mode='list', length=kmax-1)
+i <- 1
+for (j in 2:kmax){
+  print(j)
+#  set.seed(10) 
+  pamobj[[i]] <- pam(DM,diss=TRUE,k=j)
+  i = i+1
+  elapse_time <- proc.time() - ptm
+  cat(sprintf("Elapsed time = %10f \n",elapse_time[3]/60))
+}
+
+#Save the cluster object so that it can be read in by another Rcode to do the further analysis.
+#saveRDS(pamobj, 'C:\\Users\\khade\\MachineLearning\\JJproject\\Rcode\\PAMobjects\\pamobj_kmax20_under_6034.rds')
+#saveRDS(pamobj, 'C:\\Users\\khade\\MachineLearning\\JJproject\\Rcode\\PAMobjects\\pamobj_kmax10_full_17423.rds')
+
+pamobj_read <- pamobj
+#pamobj_read <- readRDS('C:\\Users\\khade\\MachineLearning\\JJproject\\Rcode\\pamobjects\\pamobj_kmax20_under_6034.rds')
+```
+
+
+#Calculate average dissimilarity and average sihouette width. Depending on the dataset used, set kmax=10 or 20.
+```{r}
+kmax <- 20
+clusvec <- vector(length=kmax-1)
+silvec <- vector(length=kmax-1)
+avgdiss <- vector(length=kmax-1)
+
+for (i in 2:kmax){
+  clusvec[i-1] <- c(i)           
+  silvec[i-1] <- pamobj_read[[i-1]]$silinfo$avg.width
+  avgdiss[i-1] <- mean(pamobj_read[[i-1]]$clusinfo[,3])
+}
+
+#Plot average dissimilarity and average silhouette width
+plot(clusvec,avgdiss,type='b',xlab='# of clusters',ylab='',main='Averagedissimilarity',cex.main=2,cex=2,pch=1,cex.lab=2.0,cex.axis=1.5,col='blue',lwd=3)  + grid(lwd=2)
+
+plot(clusvec,silvec,type='b',xlab='# of clusters',ylab='',main='Average silhouette width',cex.main=2,cex=2,pch=1,cex.lab=2.0,cex.axis=1.5,col='blue',lwd=3)  + grid(lwd=2)
+```
+
+#choose optimal value of k. For undersample,  k=20 is chosen though the average silhouette widht has not saturated.
+#This is because it is hard to analyse more than 20 clusters.
+```{r}
+
+rm(optpam)
+optpam <- pamobj_read[[19]]
+```
+
+#Define functions which return percentage share of each level for a feature.
+```{r}
+#-----Some functions used to compute heatmap
+#Return share (in percent) of each of the levels for myfeature for cluster #icl.
+pct_share_cat <- function(plotDF,myfeature,icl,dummyarr){
+  totrow <- sum(plotDF$clusnum==icl)
+  nn = length(dummyarr)  
+  pctg <- vector(length=nn)
+  for (i in 1:nn) {
+    pctg[i] <- round(sum(as.numeric(plotDF$clusnum)==icl & myfeature==dummyarr[i])/(totrow)*100)
+  }
+  return(pctg)
+}
+
+
+#Return share (in percent) of each of the numerical levels for myfeature for cluster #icl.
+pct_share_num <- function(plotDF,myfeature,icl,dummyarr){
+  totrow <- sum(plotDF$clusnum==icl)
+  nn = length(dummyarr)-1
+  pctg <- vector(length=nn)
+  
+  for (j in 1:nn) {
+    cc <- sum(plotDF$clusnum==icl &  (myfeature>=dummyarr[j] & myfeature<dummyarr[j+1]))
+    pctg[j] <- round(cc/(totrow)*100)
+  }
+  return(pctg)
+}
+
+#Return share (in percent) of each of the bin of numerical feature.
+pct_share_num2 <- function(plotDF,myfeature,dummyarr){
+  totrow <- nrow(plotDF)
+  nn = length(dummyarr)-1
+  pctg <- vector(length=nn)
+  
+  for (j in 1:nn) {
+    cc <- sum(myfeature>=dummyarr[j] & myfeature<dummyarr[j+1])
+    pctg[j] <- round(cc/(totrow)*100)
+  }
+  return(pctg)
+}
+```
+
+#-----Make heatmap to interprete the clusters
+```{r}
+
+
+#----Append the cluster id to newDF. Each row now has a cluster number.
+newDF[,"clusnum"] <- optpam$clustering
+newDF$clusnum <- factor(newDF$clusnum)
+
+ndaysarr <- c(0,1,3,5,10,1000)
+nd = length(ndaysarr)-1
+ndy <-  as.factor(ndaysarr[1:nd])
+
+featurs = c('levelN','priorityN','impactN','region','app_category','res_category','ndays','prod_line')
+nf = 0
+for (f in featurs){
+ print(f)  
+ if (f != 'ndays' ) {
+ nf = nf + length(levels(as.factor(newDF[[f]])  ))
+ }
+ else
+ {
+   nf = nf + nd
+ } 
+ }
+
+print(nf)
+
+rm(vikmat)
+
+vikmat = matrix(,nrow=nf,ncol=kmax)
+
+for (icl in 1:kmax) {
+  levstr <- c(1,2,3)
+  vikmat[1:3,icl]   = pct_share_cat(newDF,newDF$levelN,icl,levstr)
+  vikmat[4:6,icl]   = pct_share_cat(newDF,newDF$priorityN,icl,levstr)
+  vikmat[7:9,icl]   = pct_share_cat(newDF,newDF$impactN,icl,levstr)
+  vikmat[10:14,icl] = pct_share_cat(newDF,newDF$region,icl,levels(newDF$region))
+  vikmat[15:19,icl] = pct_share_cat(newDF,newDF$app_category,icl,levels(newDF$app_category))
+  vikmat[20:25,icl] = pct_share_cat(newDF,newDF$res_category,icl,levels(newDF$res_category))
+  vikmat[26:30,icl] = pct_share_num(newDF,newDF$ndays,icl,ndaysarr)
+  vikmat[31:32,icl] = pct_share_cat(newDF,newDF$prod_line,icl,levels(newDF$prod_line))
+}
+
+rownames(vikmat) <- c('L1','L2','L3','P1','P2','P3','I1','I2','I3','R01','R07','R16','R24','R28','App','Help','Moni','Serv','Soft','Conf','Conn', 'Data','JobF','UserA', 'UserT','0-1','1-3','3-5','5-10','>10','line1','line2')
+colnames(vikmat) <- c('clus1','clus2','clus3','clus4','clus5','clus6','clus7','clus8','clus9','clus10','clus11','clus12','clus13','clus14','clus15','clus16','clus17','clus18','clus19','clus20')
+#colnames(vikmat) <- c('clus1','clus2','clus3','clus4','clus5','clus6','clus7','clus8','clus9','clus10')
+
+breaks=c(0,10,20,30,40,50,60,70,80,90,100)
+color=c("burlywood1","burlywood3","cyan","cyan4","chartreuse","chartreuse4","hotpink","hotpink4","red","darkred")
+
+pheatmap::pheatmap(vikmat,cluster_rows=FALSE, cluster_cols=FALSE,scale='none',breaks=breaks,color=color,main='Clusters 17, 18, 15 have high L3 membership')
+```
+
+#For the undersample, cluster # 17,18 and 15 are most important since they have high membership of L2 and L3.
+# set icl=17,18,15 to make piecharts to answer : What does the typical member of each cluster look like ?
+```{r}
+#---Make piecharts of membership
+
+#savedir='C:\\Users\\khade\\MachineLearning\\JJproject\\figs\\final2\\'
+
+#Choose cluster for which piecharts are desired
+icl=17
+iclstr <- sprintf("%d",icl)
+
+#Piechart of variables in varstr for a particular cluster # myicl.
+make_pie <- function(mypct,varstr,tit,myicl,mycols,mysz){
+  #print(varstr)
+  #print(mycols)
+  #print(mypct)
+  
+  iclstr <- sprintf("%d",myicl)
+  pieDF = data.frame("mycat" = c(varstr),"share" = c(mypct))
+  mypie <- ggplot(pieDF, aes(x="", y=share, fill=as.factor(mycat)))+ geom_bar(stat="identity", width=1)
+  mypie <- mypie + coord_polar("y", start=0) + geom_text(aes(label = paste0(share, "%")),  size=12,position = position_stack(vjust = 0.4)) 
+  #mypie <- mypie + labs(x = NULL, y = NULL, fill = NULL, title = paste(tit,c(" : cluster "),iclstr,collapse=''))
+  mypie <- mypie + labs(x = NULL, y = NULL, fill = NULL)
+  mypie <- mypie + scale_fill_manual(breaks=varstr[],values=mycols)
+  mypie <- mypie + theme_classic() + theme(axis.line = element_blank(), axis.text = element_blank(),   legend.text=element_text(size=mysz),
+                                           axis.ticks = element_blank()) + theme(legend.position = 'bottom') 
+  return(mypie)
+}
+
+mcols = c("darkolivegreen1","green","green4")
+#---levelN
+levstr <- c(1,2,3)
+make_pie(vikmat[1:3,icl], levstr, 'levelN',icl,mcols, 60)
+
+#---prioirity
+make_pie(vikmat[4:6,icl],levstr,'priorityN',icl,mcols,60)
+
+#---impact
+make_pie(vikmat[7:9,icl],levstr,'impactN',icl,mcols,60)
+
+#------app_category
+mcols = c("lemonchiffon","aquamarine3","cornflowerblue", "green","green4","brown1")
+make_pie(vikmat[15:19,icl],substr(levels(newDF$app_category),start=1,stop=2),'app_category',icl,mcols,50.0)
+
+#-----region
+mcols = c("lightgoldenrod","lightgoldenrod3","lightgoldenrod4","lightsalmon","lightsalmon4")
+make_pie(vikmat[10:14,icl], substr(levels(newDF$region),start=2,stop=5) ,'region',icl,mcols,30)
+
+#---res_category
+mcols = c("orange","aquamarine3","cornflowerblue", "green","magenta","red")
+resstr = c("Conf","Conn","Data","JobF", "UserA","UserK")
+make_pie(vikmat[20:25,icl],resstr,'res_category',icl,mcols,40)
+
+#----ndays
+mcols = c("darkolivegreen","yellow", "yellowgreen","green4","darkgreen" )
+make_pie(vikmat[26:30,icl],c('0-1','1-3','3-5','5-10','>10'),'ndays',icl,mcols[1:5],30)
+
+#----prod_line
+mcols = c("plum2","mediumorchid4")
+make_pie(vikmat[31:32,icl],c('Line1','Line2'),'prod_line',icl,mcols[1:2],30)
+
+```
+
+#---Conclusion / recommendation
+
+#---Memberships of the 3 relevant clusters.
+
+#Clus #      level    Priority Impact  app_category    res_category  Region  Prod_line  ndays
+#Cluster-17  L3       P1 & P2   I1     Software Data   Issues         1028   Line1      Mixed
+#Cluster-18  L2 & L3  P2        I1     Application     Configuration  1007   Line2      Mixed
+#Cluster-15  L2       P2        I1     Software        Job Failure    1028   Line1      Mixed
+
+#These identified segment should be looked into by J&J to formulate strategies to push these tickets into L1 category to save costs.
