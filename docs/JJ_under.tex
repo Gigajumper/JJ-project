@@ -1,0 +1,83 @@
+\documentclass{article}
+\topmargin = -2cm
+\textheight = 25 cm
+\textwidth = 20 cm
+\oddsidemargin = -1.5cm
+\usepackage{graphicx}
+\usepackage{caption}
+\usepackage{subcaption}
+\usepackage{verbatim}
+%\usepackage{xcolor}
+\usepackage{tcolorbox}
+\setlength{\parindent}{0pt}
+
+\begin{document}
+
+
+\begin{center}
+{\Huge{\textbf{Supervised and unsupervised learning with Johnson and Johnson ticketing database}}}
+\vspace{0.5cm}
+
+\Large{Ignacio Palma,  Jairo Melo, Mahboob Jamil and Vikram Khade}
+\vspace{0.2cm}
+
+\emph{22 March 2019}
+\end{center}
+
+\section{Introduction}
+
+
+\section{Clustering}
+Partitioning Around Medoids (\textbf{PAM})  technique is used for clustering.\\
+
+I use features :\\
+
+\textbf{levelN,   priorityN,   impactN,  app\_category ,  res\_category,  region, ndays, prod\_line}\\
+
+Issue is - level2 dominates. The dataset is imbalanced especially with respect to L3 which happens to be very important.\\
+
+Solution : Undersample L1 and L2.\\
+
+set.seed(123)\\
+indx2 = sample(which(sdata$levelN == 2), round(0.2*sum(sdata$levelN == 2)),replace=FALSE)\\
+set.seed(123)\\
+indx1 = sample(which(sdata$levelN == 1), round(0.8*sum(sdata$levelN == 1)),replace=FALSE)\\
+
+underDF = rbind(sdata[indx1,], sdata[indx2,])\\
+underDF = rbind(underDF,sdata[which(sdata\$levelN == 3),])\\
+
+The underDF is more balanced than the original dataset. Though nrows = 6034 only.\\
+
+Without undersampling, all clusters tend to be dominate by either L1 or L2. Our main interest is L3.\\
+
+gower \\
+
+\section{Conclusion}
+
+\begin{table}[!h]
+\begin{tabular}{|l|c|c|c|c|c|c|c|c|}
+\hline
+Clus \# &    level  &  Priority & Impact & app\_category & res\_category & Region & Prod\_line & ndays \\
+\hline
+Cluster 17  &       L3           & P1 \& P2  &    I1   & Software   &  Data Issues     &   1028  &   Line1 & Mixed \\
+Cluster 18  &       L2 \& L3  &  P2          &    I1   & Application &  Configuration  &   1007  &   Line2 & Mixed \\
+Cluster 15  &       L2           & P2           &    I1  & Software    &  Job Failure      &   1028  &   Line1 & Mixed \\
+\hline
+\end{tabular}
+\label{tab_clus}
+\end{table}
+
+
+
+This identified segment should be looked into by J\&J to formulate strategies to push these tickets
+into L1 category to save costs.
+
+\input{figs1}
+\input{figs_under}
+\input{figs2}
+
+\begin{comment}
+\end{comment}
+
+
+\end{document}
